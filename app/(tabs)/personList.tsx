@@ -1,86 +1,75 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     SafeAreaView,
     FlatList,
-    StyleSheet,
     Pressable,
     Text,
     Modal,
     View,
-    Alert
+    Alert,
+    UIManager,
+    Platform
 } from 'react-native';
 import { Person } from '../types';
-import * as storage from '../services/storage';
-import * as file from '../services/file';
 import PersonItem from '../../components/PersonItem';
 import PersonForm from '../../components/PersonForm';
+import { usePeopleManager } from '../../hooks/usePeopleManager';
+import { globalStyles } from '../../styles/globalStyles';
+import { styles } from '../../styles/screens/personList.styles';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function PersonList() {
-    const [people, setPeople] = useState<Person[]>([]);
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-
-    const loadPeople = useCallback(async () => {
-        const data = await storage.getPeople();
-        setPeople(data.sort((a, b) => a.name.localeCompare(b.name)));
-    }, []);
+    const { people, loadPeople, addPerson, updatePerson, deletePerson } = usePeopleManager();
 
     useEffect(() => {
         loadPeople();
-    }, [loadPeople]);
+    }, []);
 
     const handleOpenForm = (person: Person | null = null) => {
         setSelectedPerson(person);
         setModalVisible(true);
     };
 
-    const handleFormSubmit = async (personData: Omit<Person, 'id'>, newPhotoUri?: string) => {
+    const handleCloseForm = () => {
+        setModalVisible(false);
+        setSelectedPerson(null);
+    }
+
+    const handleFormSubmit = async (data: { name: string; lastname: string; photoUri?: string }) => {
         try {
-            let finalPhotoUri = selectedPerson?.photoUri;
-
-            // If there is a new photo
-            if (newPhotoUri && newPhotoUri !== selectedPerson?.photoUri) {
-                // If there was an old photo, delete it
-                if (selectedPerson?.photoUri) {
-                    await file.deleteImage(selectedPerson.photoUri);
-                }
-                // Save the new photo
-                finalPhotoUri = await file.saveImage(newPhotoUri);
+            if (selectedPerson) {
+                // Update existing person
+                await updatePerson(selectedPerson.id, selectedPerson, data);
+            } else {
+                // Add new person
+                await addPerson(data);
             }
-
-            const personToSave: Person = {
-                id: selectedPerson?.id || new Date().getTime().toString(),
-                ...personData,
-                photoUri: finalPhotoUri,
-            };
-
-            await storage.savePerson(personToSave);
-            setModalVisible(false);
-            setSelectedPerson(null);
-            loadPeople(); // Reload list
+            handleCloseForm();
         } catch (error) {
             console.error("Error saving person:", error);
             Alert.alert("Error", "No se pudo guardar la persona.");
         }
     };
 
-    const handleDelete = async (id: string) => {
-        const personToDelete = people.find(p => p.id === id);
-        if (personToDelete?.photoUri) {
-            await file.deleteImage(personToDelete.photoUri);
-        }
-        await storage.deletePerson(id);
-        loadPeople(); // Reload list
-    };
-
-    const handleDeletePhoto = async (id: string) => {
-        const person = await storage.getPerson(id);
-        if (person && person.photoUri) {
-            await file.deleteImage(person.photoUri);
-            person.photoUri = undefined;
-            await storage.savePerson(person);
-            loadPeople(); // Reload list
-        }
+    const handleDelete = (id: string) => {
+        Alert.alert(
+            "Eliminar Persona",
+            "¿Estás seguro de que quieres eliminar a esta persona?",
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Eliminar",
+                    style: "destructive",
+                    onPress: () => deletePerson(id)
+                }
+            ]
+        );
     };
 
     return (
@@ -93,33 +82,27 @@ export default function PersonList() {
                         person={item}
                         onEdit={() => handleOpenForm(item)}
                         onDelete={handleDelete}
-                        onDeletePhoto={handleDeletePhoto}
                     />
                 )}
+                contentContainerStyle={{ paddingTop: 8, paddingBottom: 80 }}
                 ListEmptyComponent={<Text style={styles.emptyText}>No hay personas registradas.</Text>}
             />
 
-            <Pressable style={styles.fab} onPress={() => handleOpenForm()}>
-                <Text style={styles.fabText}>+</Text>
+            <Pressable style={globalStyles.fab} onPress={() => handleOpenForm()}>
+                <Text style={globalStyles.fabText}>+</Text>
             </Pressable>
 
             <Modal
                 animationType="slide"
                 transparent={true}
                 visible={modalVisible}
-                onRequestClose={() => {
-                    setModalVisible(!modalVisible);
-                    setSelectedPerson(null);
-                }}>
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalView}>
+                onRequestClose={handleCloseForm}>
+                <View style={globalStyles.modalContainer}>
+                    <View style={globalStyles.modalView}>
                         <PersonForm
-                            person={selectedPerson}
+                            initialData={selectedPerson}
                             onSubmit={handleFormSubmit}
-                            onCancel={() => {
-                                setModalVisible(false);
-                                setSelectedPerson(null);
-                            }}
+                            onCancel={handleCloseForm}
                         />
                     </View>
                 </View>
@@ -127,45 +110,3 @@ export default function PersonList() {
         </SafeAreaView>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f8f8f8',
-    },
-    fab: {
-        position: 'absolute',
-        width: 56,
-        height: 56,
-        alignItems: 'center',
-        justifyContent: 'center',
-        right: 20,
-        bottom: 20,
-        backgroundColor: '#007BFF',
-        borderRadius: 28,
-        elevation: 8,
-    },
-    fabText: {
-        fontSize: 24,
-        color: 'white',
-    },
-    modalContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    },
-    modalView: {
-        width: '90%',
-        backgroundColor: 'white',
-        borderRadius: 10,
-        padding: 10,
-        elevation: 5,
-    },
-    emptyText: {
-        textAlign: 'center',
-        marginTop: 50,
-        fontSize: 16,
-        color: '#666',
-    }
-});

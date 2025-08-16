@@ -30,10 +30,8 @@ export const savePerson = async (person: Person): Promise<void> => {
     const existingPersonIndex = people.findIndex(p => p.id === person.id);
 
     if (existingPersonIndex !== -1) {
-      // Update existing person
       people[existingPersonIndex] = person;
     } else {
-      // Add new person
       people.push(person);
     }
 

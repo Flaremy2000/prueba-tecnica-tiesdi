@@ -2,7 +2,6 @@ import * as FileSystem from 'expo-file-system';
 
 const imageDirectory = `${FileSystem.documentDirectory}images/`;
 
-// Helper to ensure the directory exists
 const ensureDirExists = async () => {
   const dirInfo = await FileSystem.getInfoAsync(imageDirectory);
   if (!dirInfo.exists) {
